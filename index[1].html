@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b6e7f">
+<meta name="description" content="Elimina los valores de referencia de una analítica y comprueba que los valores numéricos no cambian.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>:root{color-scheme:light;padding-block:env(safe-area-inset-top,0px) env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+<title>Analítica sin referencias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: cabecera compacta, dos paneles (entrada / resultado), después verificación y revisión de cambios a ancho completo. */
+:root{
+  --bg:#f3f5f6;
+  --surface:#ffffff;
+  --fg:#16222b;
+  --muted:#5b6b76;
+  --line:#d5dde2;
+  --accent:#0b6e7f;
+  --accent-fg:#ffffff;
+  --accent-soft:#dcedf0;
+  --ok:#1d7a46; --ok-soft:#dff2e6;
+  --warn:#8a5a00; --warn-soft:#fbefd2;
+  --bad:#b3261e; --bad-soft:#fbe3e0;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f171c; --surface:#16222a; --fg:#e4ebef; --muted:#93a4af; --line:#2b3b45;
+  --accent:#4fb7c9; --accent-fg:#06222a; --accent-soft:#16363e;
+  --ok:#5fcf8f; --ok-soft:#133323; --warn:#e8b64f; --warn-soft:#3a2d0e; --bad:#ff8a80; --bad-soft:#42201d;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f171c; --surface:#16222a; --fg:#e4ebef; --muted:#93a4af; --line:#2b3b45;
+  --accent:#4fb7c9; --accent-fg:#06222a; --accent-soft:#16363e;
+  --ok:#5fcf8f; --ok-soft:#133323; --warn:#e8b64f; --warn-soft:#3a2d0e; --bad:#ff8a80; --bad-soft:#42201d;
+  color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:24px 48px}
+.wrap{max-width:1120px;margin-inline:auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:1.5rem;line-height:1.2;font-weight:600;margin:0;text-wrap:balance}
+.lead{margin:6px 0 0;color:var(--muted);max-width:100ch;text-wrap:pretty}
+h2{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--muted);margin:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;font-size:.875rem;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:6px 12px;border-radius:6px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible,textarea:focus-visible,.seg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+textarea,.out{font-family:var(--font-data);font-size:.86rem;line-height:1.65;width:100%;height:clamp(260px,46vh,440px);box-sizing:border-box;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--bg);color:var(--fg);white-space:pre-wrap;overflow-wrap:anywhere;resize:none;margin:0}
+.opts{display:flex;flex-wrap:wrap;gap:6px 20px}
+.opt{display:flex;align-items:center;gap:8px;font-size:.875rem;cursor:pointer}
+.opt input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.out{overflow:auto}
+.out:empty::before{content:"El resultado aparecerá aquí.";color:var(--muted);font-family:var(--font-body)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.status{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pill{font-size:.78rem;font-weight:600;padding:3px 10px;border-radius:99px;letter-spacing:.02em}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.idle{background:var(--accent-soft);color:var(--accent)}
+.stats{color:var(--muted);font-size:.875rem;font-variant-numeric:tabular-nums}
+ul.checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.checks li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline}
+.tag{font-family:var(--font-data);font-size:.72rem;font-weight:500;padding:1px 7px;border-radius:4px;min-width:3.6em;text-align:center}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.detail{color:var(--muted);font-size:.84rem;display:block;overflow-wrap:anywhere}
+code,.mono{font-family:var(--font-data);font-size:.84em}
+.review{font-family:var(--font-data);font-size:.86rem;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--bg)}
+.seg{font:inherit;border:0;padding:1px 3px;border-radius:3px;cursor:pointer;color:inherit;background:none}
+.seg.on{background:var(--bad-soft);color:var(--bad);text-decoration:line-through;text-decoration-thickness:1px}
+.seg.sec{background:var(--accent-soft);color:var(--accent)}
+.seg.maybe{background:var(--warn-soft);color:var(--warn);outline:1px dashed var(--warn);outline-offset:-1px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:.84rem}
+.legend .seg{cursor:default}
+.hint{color:var(--muted);font-size:.84rem;margin:0}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Analítica sin valores de referencia</h1>
+    <p class="lead">Pega los resultados con sus siglas, valores y rangos de referencia. Devuelve el mismo texto sin los rangos, con los saltos de línea intactos, y comprueba que cada valor numérico se conserva.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="h-in">
+      <div class="head">
+        <h2 id="h-in">Texto original</h2>
+        <div class="btns">
+          <button type="button" class="primary" id="btn-paste">Pegar</button>
+          <button type="button" id="btn-ex">Cargar ejemplo</button>
+          <button type="button" id="btn-clear">Borrar</button>
+        </div>
+      </div>
+      <textarea id="inp" spellcheck="false" aria-label="Texto original con valores de referencia" placeholder="Pega aquí la analítica…"></textarea>
+      <p class="hint" id="paste-hint" hidden>Este visor impide que la página lea el portapapeles desde un botón. Pulsa Ctrl+V (⌘V en Mac) y el texto se pegará aquí, con el cuadro seleccionado o sin él.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-out">
+      <div class="head">
+        <h2 id="h-out">Resultado sin referencias</h2>
+        <div class="btns"><button type="button" class="primary" id="btn-copy">Copiar resultado</button></div>
+      </div>
+      <div class="out" id="out" role="region" aria-label="Texto resultante" aria-live="polite"></div>
+      <div class="opts">
+        <label class="opt" for="chk-join"><input type="checkbox" id="chk-join" checked> Unir en un párrafo (valores separados por comas)</label>
+        <label class="opt" for="chk-units"><input type="checkbox" id="chk-units"> Eliminar unidades (<span class="mono">mg/dL</span>, <span class="mono">x10^3/µL</span>…)</label>
+      </div>
+    </section>
+  </div>
+
+  <div class="bar">
+    <label class="opt" for="chk-details"><input type="checkbox" id="chk-details"> Mostrar verificación y revisión de cambios</label>
+    <div class="status"><span class="pill idle" id="pill">Sin texto</span><span class="stats" id="stats"></span></div>
+  </div>
+
+  <section class="panel" id="sec-ver" aria-labelledby="h-ver" hidden>
+    <h2 id="h-ver">Verificación de fidelidad</h2>
+    <ul class="checks" id="checks"></ul>
+  </section>
+
+  <section class="panel" id="sec-rev" aria-labelledby="h-rev" hidden>
+    <h2 id="h-rev">Revisión de cambios</h2>
+    <div class="legend">
+      <span><span class="seg on">eliminado</span> pulsa para conservarlo</span>
+      <span><span class="seg sec">sección</span> se sustituye por un encabezado</span>
+      <span><span class="seg maybe">dudoso</span> no eliminado, pulsa para eliminarlo</span>
+    </div>
+    <div class="review" id="review"></div>
+    <p class="hint">Los rangos dudosos son números sueltos tras un valor, sin paréntesis ni etiqueta (por ejemplo «Ferritina 48 ng/mL 15 - 150»). Solo se eliminan si los marcas.</p>
+  </section>
+</div>
+
+<script>
+// ==CORE START
+const NUM = '\\d+(?:[.,]\\d+)?';
+function mk(W){
+  const SEP = `(?:${W}*[-–—]${W}*|${W}+(?:a|hasta|to)${W}+)`;
+  const RANGE = `[-−]?${NUM}${SEP}${NUM}`;
+  const CMP = `(?:<=|>=|=<|=>|<|>|≤|≥|menor(?:es)?${W}+(?:de|que)|mayor(?:es)?${W}+(?:de|que)|inferior${W}+a|superior${W}+a|hasta|m[aá]x\\.?|m[ií]n\\.?)${W}*${NUM}`;
+  const REF = `(?:${RANGE}|${CMP})`;
+  const UNIT = `(?:(?:\\/[A-Za-zµμ]{1,6}|[A-Za-zµμ]{1,6}(?:\\/[\\wµμ.³]+(?:,\\d+[A-Za-z0-9]*)?)+|%|(?:x${W}?)?10(?:\\^|\\*\\*)?[0-9³⁶⁹]+(?:\\/[\\wµμ]+)?|(?:fL|pg|mg|g|µg|ug|ng|mm|seg|UI|IU|mEq|mmol|mL|dL|L|kg|mmHg|U|s))(?![\\wµμ]))`;
+  const SEXL = `(?:hombres?|mujeres?|varones?|ni[ñn]os?|ni[ñn]as?|adultos?|adultas?|embarazadas?|masc(?:ulino)?\\.?|fem(?:enino)?\\.?|[HMVF])`;
+  const REFL = `(?:valores?${W}+(?:de${W}+)?referencia|valores?${W}+normales?|valor${W}+normal|rango(?:${W}+(?:de${W}+referencia|normal))?|intervalo(?:${W}+de${W}+referencia)?|referencia|ref\\.?|v\\.?${W}?[rn]\\.?|normal(?:es)?)`;
+  const ITEM = `(?:${SEXL}${W}*[:=]?${W}*)?${REF}(?:${W}*${UNIT})?`;
+  const LIST = `${ITEM}(?:${W}*(?:[;,|/]|\\by\\b)${W}*${ITEM})*`;
+  const CONTENT = `(?:${REFL}${W}*[:=]?${W}*)?${LIST}`;
+  return {REF, UNIT, REFL, LIST, CONTENT};
+}
+
+// Etiquetas de sección entre corchetes que se sustituyen por un encabezado
+const SECTIONS = [
+  {re: '\\[\\s*BIOQU[IÍ]MICA\\b[^\\]\\n]*\\]', header: 'Bioquímica'},
+  {re: '(?<![\\wÀ-ÿ])URIAN[AÁ]LISIS[ \\t]*\\n?[ \\t]*Sistem[aá]tico[ \\t]+de[ \\t]+orinas[ \\t]+y[ \\t]+sedimento(?![\\wÀ-ÿ])', header: 'Sistemático de orinas y sedimento'},
+  {re: '\\[\\s*ORINAS?\\b[^\\]\\n]*\\]', header: 'Sedimento y sistemático'},
+  {re: '(?<![\\wÀ-ÿ])ORINAS[ \\t]*\\n?[ \\t]*Sistem[aá]tico[ \\t]+de[ \\t]+orinas[ \\t]+y[ \\t]+sedimento(?![\\wÀ-ÿ])', header: 'Sedimento y sistemático'},
+  {re: '\\[\\s*GASOMETR[IÍ]AS?\\b[^\\]\\n]*\\]', header: 'Gasometría'},
+  {re: '(?<![\\wÀ-ÿ])GASOMETR[IÍ]AS[ \\t]*\\n?[ \\t]*Gases[ \\t]+venosos(?![\\wÀ-ÿ])', header: 'Gasometría venosa'},
+  {re: '(?<![\\wÀ-ÿ])GASOMETR[IÍ]AS[ \\t]*\\n?[ \\t]*Gases[ \\t]+arteriales(?![\\wÀ-ÿ])', header: 'Gasometría arterial'},
+  {re: '\\[\\s*HEMATIMETR[IÍ]A\\b[^\\]\\n]*\\]', header: 'Hemograma'},
+  {re: '^[ \\t]*HEMATIMETR[IÍ]A[ \\t]*(?:\\n[ \\t]*Hemograma b[aá]sico[ \\t]*)?(?=[ \\t]*(?:\\n|$))', header: 'Hemograma'},
+  {re: '\\[\\s*TROMBOSIS\\s+Y\\s+HEMOSTASIA\\b[^\\]\\n]*\\]', header: 'Coagulación'},
+  {re: '(?<![\\wÀ-ÿ])TROMBOSIS[ \\t]+Y[ \\t]+HEMOSTASIA[ \\t]*\\n?[ \\t]*Estudio[ \\t]+b[aá]sico[ \\t]+de[ \\t]+coagulaci[oó]n(?![\\wÀ-ÿ])', header: 'Coagulación'}
+];
+
+const ROW_SCOPES = ['Hemograma', 'Gasometría', 'Gasometría venosa', 'Gasometría arterial'];
+const ROW_DROP = /^(?:C\.?\s?H\.?\s?C\.?\s?M|V\.?\s?C\.?\s?M|H\.?\s?C\.?\s?M|R\.?\s?D\.?\s?W(?:\s*\(C\.?\s?V\.?\))?|Hematocrito|Hto|Hemat[ií]es)\.?$/i;
+
+function analyze(text, opts = {}){
+  const S = mk('\\s'), H = mk('[ \\t]');
+  const found = [];
+  const add = (re, kind, grp, header, extra) => {
+    let m;
+    while ((m = re.exec(text))) {
+      if (m[0] === '') { re.lastIndex++; continue; }
+      let s = m.index, e = s + m[0].length;
+      if (grp) [s, e] = m.indices[grp];
+      found.push({start: s, end: e, kind, header, ...extra});
+    }
+  };
+  for (const sec of SECTIONS) add(new RegExp(sec.re, 'gim'), 'section', 0, sec.header);
+  add(/^[ \t]*[Tt]ipo[ \t]+de[ \t]+muestra[ \t]*:[^\n]*|[Tt]ipo[ \t]+de[ \t]+muestra[ \t]*:[ \t]*[A-ZÁÉÍÓÚÑ]{3,}(?:[ \t]+[A-ZÁÉÍÓÚÑ]{3,})*/gm, 'sample');
+  add(/(?<![\w#])#(?![\w#])/g, 'hash');
+  add(/\(\s*\)/g, 'empty');
+  add(/(?<![\wÀ-ÿ])negativo(?![\wÀ-ÿ])/gi, 'sub', 0, undefined, {replacement: '-'});
+  // Filas de tabla «Etiqueta valor [unidad] [rango]»: se quita el rango y, en la sección de hemograma, las filas en % y las indicadas
+  {
+    const secs = found.filter(x => x.kind === 'section').sort((a, b) => a.start - b.start);
+    const scopes = secs.filter(x => ROW_SCOPES.includes(x.header)).map(x => { const nx = secs.find(y => y.start >= x.end); return [x.end, nx ? nx.start : text.length]; });
+    const rowRe = new RegExp(`^([ \\t]*)([^\\d\\n:]{1,40}?)[ \\t]+(\\*?${NUM}\\*?)[ \\t]*(${H.UNIT})?(?:[ \\t]+(${H.REF}(?:[ \\t]*${H.UNIT})?))?[ \\t]*(?:\\n|$)`, 'gimd');
+    let m;
+    while ((m = rowRe.exec(text))) {
+      if (m[0] === '') { rowRe.lastIndex++; continue; }
+      const start = m.index + m[1].length;
+      const end = m.index + m[0].length - (m[0].endsWith('\n') ? 1 : 0);
+      const inHemo = scopes.some(([a, b]) => start >= a && start < b);
+      if (inHemo && (m[4] === '%' || ROW_DROP.test(m[2].trim()))) found.push({start, end, kind: 'row'});
+      else if (m[5]) found.push({start: m.indices[5][0], end: m.indices[5][1], kind: 'label'});
+    }
+  }
+  add(new RegExp(`\\(\\s*${S.CONTENT}\\s*\\)|\\[\\s*${S.CONTENT}\\s*\\]`, 'gi'), 'paren');
+  add(new RegExp(`(?<![\\wÀ-ÿ])${S.REFL}\\s*[:=]?\\s*(?:\\(\\s*${S.LIST}\\s*\\)|\\[\\s*${S.LIST}\\s*\\]|${S.LIST})`, 'gi'), 'label');
+  const loose = [];
+  const keep = found.length;
+  add(new RegExp(`(?<![\\d.,\\-–/])${NUM}(?:[ \\t]*${H.UNIT})?(?:[ \\t]*\\([ \\t]*\\))?[ \\t]+(${H.REF}(?:[ \\t]*${H.UNIT})?)(?![\\w/]|[-–.,]\\d)(?=[ \\t]*(?:\\n|$)|[ \\t]+[A-Za-zÀ-ÿµ*#]|[ \\t]*[.;,])`, 'gid'), 'label', 1);
+  const certain = found.slice().sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const dubious = [];
+  const acc = [];
+  const free = (x) => acc.every(y => x.end <= y.start || x.start >= y.end);
+  for (const x of certain) if (free(x)) acc.push(x);
+  for (const x of dubious) if (free(x)) acc.push(x);
+  // Texto sin saltos de línea: quita «etiqueta valor %» con su rango en las secciones indicadas
+  {
+    const secs = acc.filter(x => x.kind === 'section');
+    const scopes = secs.filter(x => ROW_SCOPES.includes(x.header)).map(x => { const nx = secs.find(y => y.start >= x.end); return [x.end, nx ? nx.start : text.length]; });
+    const pctRe = /(?<![\d.,\-–/])\*?\d+(?:[.,]\d+)?\*?[ \t]*%/g;
+    const unitTok = new RegExp(`^${H.UNIT}$`);
+    let m;
+    while ((m = pctRe.exec(text))) {
+      const vs = m.index, ve = vs + m[0].length;
+      if (!scopes.some(([a, b]) => vs >= a && vs < b)) continue;
+      if (acc.some(x => x.kind === 'row' && x.start <= vs && x.end >= ve)) continue;
+      const rg = acc.find(x => x.kind === 'label' && x.start >= ve && /^[ \t]*$/.test(text.slice(ve, x.start)));
+      const end = rg ? rg.end : ve;
+      const prevEnd = Math.max(0, ...acc.filter(x => x.end <= vs).map(x => x.end));
+      const toks = [...text.slice(prevEnd, vs).matchAll(/\S+/g)];
+      let first = null;
+      for (let i = toks.length - 1; i >= 0 && toks.length - i <= 6; i--) {
+        const t = toks[i][0];
+        if (/\d/.test(t) || unitTok.test(t) || /^[.,;]$/.test(t)) break;
+        first = prevEnd + toks[i].index;
+      }
+      const start = first === null ? vs : first;
+      for (let i = acc.length - 1; i >= 0; i--) if (acc[i].start >= start && acc[i].end <= end) acc.splice(i, 1);
+      if (free({start, end})) acc.push({start, end, kind: 'row'});
+    }
+  }
+  if (opts.units) {
+    const re = new RegExp(`(?<=[\\d)\\]])[ \\t]*(${H.UNIT})`, 'gid');
+    let m;
+    while ((m = re.exec(text))) {
+      if (m[0] === '') { re.lastIndex++; continue; }
+      const [us, ue] = m.indices[1];
+      const prev = text[m.index - 1];
+      const ok = /\d/.test(prev) || acc.some(x => x.kind !== 'loose' && x.end === m.index);
+      const c = {start: us, end: ue, kind: 'unit'};
+      if (ok && free(c)) acc.push(c);
+    }
+  }
+  acc.sort((a, b) => a.start - b.start);
+  return acc.map(x => ({...x, text: text.slice(x.start, x.end), on: x.kind !== 'loose', header: x.header}));
+}
+
+const UNIT_TOKEN = new RegExp(`^${mk('[ \\t]').UNIT}$`);
+
+// Nombres de parámetros de orina: en un texto sin saltos de línea marcan dónde empieza cada resultado
+const URINE_HEADS = ['Sedimento y sistemático', 'Sistemático de orinas y sedimento'];
+const URINE_LABEL_COMMA = new RegExp('([^\\s,:])[ \\t]+(?=(?:pH|Densidad|Prote[ií]nas|Glucosa|Bilirrubina|Urobilin[oó]geno|Sangre|Nitritos|Leucocitos|Cuerpos[ \\t]+Cet[oó]nicos|Sedimento|Color|Aspecto|Hemat[ií]es|C[eé]lulas[ \\t]+epiteliales|Cilindros|Cristales|Bacterias|Levaduras|Moco)(?![\\wÀ-ÿ]))', 'g');
+
+function joinLines(t){
+  return t.split(/\n[ \t]*\n/)
+    .map(b => b.split('\n').map(l => l.trim()).filter(Boolean)
+      .reduce((a, l) => a === null ? l : a + (/[.,;:]$/.test(a) ? ' ' : ', ') + l, null) || '')
+    .filter(Boolean).join('\n\n');
+}
+
+function buildFull(text, spans, opts = {}){
+  let out = '', pos = 0, nl = 0;
+  const heads = [...new Set(spans.filter(x => x.on && x.kind === 'section').map(x => x.header))];
+  // Una sola sección: su encabezado va al inicio. Varias: cada encabezado sustituye a su etiqueta.
+  const inplace = heads.length > 1;
+  for (const sp of spans) {
+    if (!sp.on) continue;
+    let s = sp.start, e = sp.end;
+    nl += (text.slice(s, e).match(/\n/g) || []).length;
+    if (sp.kind === 'star') { out += text.slice(pos, s); pos = e; continue; }
+    if (sp.kind === 'sub') {
+      let c = '';
+      if (opts.join) { const nx = text.slice(e).match(/^[ \t]+([A-Za-zÀ-ÿµ*#][^\s]*)/); if (nx && !UNIT_TOKEN.test(nx[1])) c = ','; }
+      out += text.slice(pos, s) + sp.replacement + c; pos = e; continue;
+    }
+    if (sp.kind === 'section' && inplace) {
+      while (e < text.length && /\s/.test(text[e])) { if (text[e] === '\n') nl++; e++; }
+      let before = out + text.slice(pos, s);
+      if (before.trim()) {
+        // línea en blanco entre una sección y la siguiente
+        const t = before.replace(/\s+$/, '');
+        nl += (before.slice(t.length).match(/\n/g) || []).length - 2;
+        before = t + '\n\n';
+      }
+      out = before + sp.header + ': ';
+      pos = e;
+      continue;
+    }
+    while (s > pos && (text[s-1] === ' ' || text[s-1] === '\t')) s--;
+    let comma = false;
+    if (opts.join && sp.kind === 'label') {
+      const nx = text.slice(e).match(/^[ \t]+([A-Za-zÀ-ÿµ*#][^\s]*)/);
+      if (nx && !UNIT_TOKEN.test(nx[1])) comma = true;
+    }
+    if (['row', 'label', 'loose'].includes(sp.kind)) { const pm = text.slice(e).match(/^[ \t]+(?=[.;,])/); if (pm) e += pm[0].length; }
+    if (s === 0 || text[s-1] === '\n') {
+      while (e < text.length && (text[e] === ' ' || text[e] === '\t')) e++;
+      if (sp.kind === 'section' || sp.kind === 'sample' || sp.kind === 'row') {
+        if (text[e] === '\r' && text[e+1] === '\n') { e += 2; nl++; }
+        else if (text[e] === '\n') { e++; nl++; }
+      }
+    }
+    out += text.slice(pos, s) + (comma ? ',' : '');
+    pos = e;
+  }
+  out += text.slice(pos);
+  const prefix = inplace || !heads.length ? '' : heads[0] + ': ';
+  if (prefix) {
+    const lead = out.match(/^\s*/)[0];
+    nl += (lead.match(/\n/g) || []).length;
+    out = out.slice(lead.length);
+  }
+  const raw = prefix + out;
+  let final = raw;
+  if (opts.join) {
+    final = joinLines(raw);
+    if (heads.some(h => URINE_HEADS.includes(h))) final = final.replace(URINE_LABEL_COMMA, '$1, ');
+    final = final.replace(/,([ \t]*[.;])/g, '$1').replace(/,[ \t]*(\n|$)/g, '$1');
+    nl += (raw.match(/\n/g) || []).length - (final.match(/\n/g) || []).length;
+  }
+  return {out: final, raw, prefix, nl, inplace, heads};
+}
+const build = (t, s, o) => buildFull(t, s, o).out;
+
+const numsOf = (s) => s.match(new RegExp(NUM, 'g')) || [];
+
+function verify(text, spans, out, opts = {}){
+  const on = spans.filter(s => s.on);
+  let blanked = '', pos = 0, removedText = '', unitText = '', rowText = '';
+  for (const sp of on) { blanked += text.slice(pos, sp.start) + '\u0001'; if (sp.kind === 'unit') unitText += sp.text + ' '; else if (sp.kind === 'row') rowText += sp.text + ' '; else removedText += sp.text + ' '; pos = sp.end; }
+  blanked += text.slice(pos);
+  const all = numsOf(text), kept = numsOf(blanked), got = numsOf(out), removed = numsOf(removedText), unitNums = numsOf(unitText), rowNums = numsOf(rowText);
+  const checks = [];
+  const bf = buildFull(text, spans, opts);
+  checks.push({
+    ok: all.length === kept.length + removed.length + unitNums.length + rowNums.length,
+    label: 'Recuento de números',
+    detail: `Original: ${all.length}. Eliminados dentro de referencias: ${removed.length}.${rowNums.length ? ` Eliminados en filas completas: ${rowNums.length}.` : ''}${unitNums.length ? ` Dígitos de unidades eliminadas: ${unitNums.length}.` : ''} Esperados en el resultado: ${kept.length}. En el resultado: ${got.length}.`
+  });
+  let firstDiff = -1;
+  if (kept.length === got.length) { for (let i = 0; i < kept.length; i++) if (kept[i] !== got[i]) { firstDiff = i; break; } } else firstDiff = Math.min(kept.length, got.length);
+  checks.push({
+    ok: firstDiff === -1,
+    label: 'Valores conservados, uno a uno y en orden',
+    detail: firstDiff === -1 ? `${got.length} valores idénticos al original, en el mismo orden.` : `Primera diferencia en la posición ${firstDiff + 1}.`
+  });
+  const strip = (s) => s.replace(/\s+/g, '');
+  const noSpans = (() => { let r = '', p = 0; for (const sp of on) { r += text.slice(p, sp.start) + (bf.inplace && sp.kind === 'section' ? sp.header + ': ' : sp.kind === 'sub' ? sp.replacement : ''); p = sp.end; } return r + text.slice(p); })();
+  checks.push({
+    ok: (opts.join ? (t) => strip(t).replace(/,/g, '') : strip)(bf.prefix + noSpans) === (opts.join ? (t) => strip(t).replace(/,/g, '') : strip)(bf.raw),
+    label: 'Resto del texto idéntico',
+    detail: 'Siglas, unidades, signos y palabras coinciden con el original; solo cambian los espacios junto a lo eliminado.'
+  });
+  const nl = (s) => (s.match(/\n/g) || []).length;
+  checks.push({
+    ok: nl(text) - bf.nl === nl(out),
+    label: 'Formato de párrafos',
+    detail: `${nl(text)} saltos de línea en el original, ${nl(out)} en el resultado` + (bf.nl ? ` (${bf.nl} se quitan con encabezados, filas eliminadas o espacios en blanco).` : '.')
+  });
+  if (bf.heads.length) checks.push({
+    ok: bf.inplace ? bf.heads.every(h => out.includes(h + ': ')) : out.startsWith(bf.prefix),
+    label: 'Encabezado de sección',
+    detail: bf.inplace
+      ? `Cada etiqueta entre corchetes se sustituye en su sitio por su encabezado: ${bf.heads.map(h => '«' + h + ':»').join(', ')}.`
+      : `«${bf.prefix.trim()}» al inicio del resultado, en lugar de la etiqueta original entre corchetes.`
+  });
+  if (opts.join) {
+    const noSep = (t) => strip(t).replace(/,/g, '');
+    checks.push({
+      ok: noSep(out) === noSep(bf.raw),
+      label: 'Unión en párrafo',
+      detail: 'Las líneas se unen con comas; no cambia ningún otro carácter.'
+    });
+  }
+  const warns = [];
+  const left = out.match(/(?<![\d.,\-–/])\d+(?:[.,]\d+)?\s*[-–—]\s*\d+(?:[.,]\d+)?(?![\d]|[-–/.,]\d)/g) || [];
+  const labels = out.match(/(?<![\wÀ-ÿ])(?:VR|V\.R\.|valores? de referencia|rango normal|rango de referencia|intervalo de referencia)(?![\wÀ-ÿ])/gi) || [];
+  const maybe = spans.filter(s => !s.on).length;
+  if (left.length) warns.push(`Posibles rangos que siguen en el resultado: ${[...new Set(left)].join(' · ')}`);
+  if (labels.length) warns.push(`Etiquetas de referencia que siguen en el resultado: ${[...new Set(labels)].join(' · ')}`);
+  if (maybe) warns.push(`${maybe} rango${maybe > 1 ? 's' : ''} dudoso${maybe > 1 ? 's' : ''} sin eliminar (ver revisión de cambios).`);
+  return {checks, warns, counts: {removed: on.filter(x => !['section', 'sample', 'unit', 'row', 'star', 'hash', 'empty', 'sub'].includes(x.kind)).length, rows: on.filter(x => x.kind === 'row').length, subs: on.filter(x => x.kind === 'sub').length, units: on.filter(x => x.kind === 'unit').length, kept: got.length, all: all.length}, removedNums: removed, rowsList: on.filter(x => x.kind === 'row').map(x => x.text.replace(/\s+/g, ' ')), unitsList: [...new Set(on.filter(x => x.kind === 'unit').map(x => x.text))]};
+}
+// ==CORE END
+
+const EXAMPLE = `[BIOQUÍMICA GENERAL *-PLASMA HEPARINA]
+Glucosa 92 mg/dL (70-100), Urea 31 mg/dL [15-45], Creatinina 0,82 mg/dL (VR: 0,50-0,90), FG (CKD-EPI) 94 mL/min/1,73m2 (>60), Colesterol total 212 mg/dL (<200), LDL 131 mg/dL (< 130), Sodio 140 mmol/L (135 - 145), Potasio 4,1 mmol/L, TSH 2,35 µUI/mL (Valores de referencia: 0,27-4,20), PCR 1,2 mg/L Ref: hasta 5,0.
+Ferritina 48 ng/mL 15 - 150`;
+
+const $ = (id) => document.getElementById(id);
+const inp = $('inp'), out = $('out'), review = $('review');
+let spans = [], text = '', result = '';
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function render(){
+  result = build(text, spans, {join: $('chk-join').checked});
+  out.textContent = result;
+  if (!text.trim()) {
+    $('pill').className = 'pill idle'; $('pill').textContent = 'Sin texto'; $('stats').textContent = '';
+    $('checks').innerHTML = ''; review.innerHTML = ''; return;
+  }
+  const v = verify(text, spans, result, {join: $('chk-join').checked});
+  const failed = v.checks.some(c => !c.ok);
+  $('pill').className = 'pill ' + (failed ? 'bad' : v.warns.length ? 'warn' : 'ok');
+  $('pill').textContent = failed ? 'Hay diferencias' : v.warns.length ? 'Revisar' : 'Fiel al original';
+  $('stats').textContent = `${v.counts.removed} referencias eliminadas${v.counts.rows ? ` · ${v.counts.rows} filas eliminadas` : ''}${v.counts.subs ? ` · ${v.counts.subs} sustituciones` : ''}${v.counts.units ? ` · ${v.counts.units} unidades eliminadas` : ''} · ${v.counts.kept} valores conservados`;
+  $('checks').innerHTML =
+    v.checks.map(c => `<li><span class="tag ${c.ok ? 'ok' : 'bad'}">${c.ok ? 'OK' : 'Error'}</span><span>${esc(c.label)}<span class="detail">${esc(c.detail)}</span></span></li>`).join('') +
+    v.warns.map(w => `<li><span class="tag warn">Revisar</span><span class="detail" style="color:var(--fg)">${esc(w)}</span></li>`).join('') +
+    (v.removedNums.length ? `<li><span class="tag ok" style="visibility:hidden">OK</span><span class="detail">Números eliminados: <code>${esc(v.removedNums.join('  '))}</code></span></li>` : '') +
+    (v.rowsList.length ? `<li><span class="tag ok" style="visibility:hidden">OK</span><span class="detail">Filas eliminadas: <code>${esc(v.rowsList.join('  ·  '))}</code></span></li>` : '') +
+    (v.unitsList.length ? `<li><span class="tag ok" style="visibility:hidden">OK</span><span class="detail">Unidades eliminadas: <code>${esc(v.unitsList.join('  '))}</code></span></li>` : '');
+  let h = '', pos = 0;
+  spans.forEach((sp, i) => {
+    h += esc(text.slice(pos, sp.start));
+    h += `<button type="button" class="seg ${sp.on ? (sp.kind === 'section' || sp.kind === 'sub' ? 'sec' : 'on') : 'maybe'}" data-i="${i}" title="${sp.kind === 'sub' ? 'Se sustituye por «' + sp.replacement + '». ' + (sp.on ? 'Pulsa para conservar' : 'Pulsa para sustituir') : sp.kind === 'section' ? (sp.on ? 'Se sustituye por «' + sp.header + ':». Pulsa para conservar la etiqueta' : 'Pulsa para sustituir por «' + sp.header + ':»') : sp.on ? 'Conservar' : 'Eliminar'}">${esc(sp.text)}</button>`;
+    pos = sp.end;
+  });
+  review.innerHTML = h + esc(text.slice(pos));
+}
+
+function recompute(){ text = inp.value; spans = analyze(text, {units: $('chk-units').checked}); render(); }
+$('chk-units').addEventListener('change', recompute);
+$('chk-join').addEventListener('change', render);
+$('chk-details').addEventListener('change', () => {
+  const show = $('chk-details').checked;
+  $('sec-ver').hidden = !show; $('sec-rev').hidden = !show;
+});
+
+inp.addEventListener('input', recompute);
+review.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg'); if (!b) return;
+  spans[+b.dataset.i].on = !spans[+b.dataset.i].on; render();
+});
+inp.addEventListener('paste', () => { $('paste-hint').hidden = true; });
+$('btn-paste').addEventListener('click', async () => {
+  inp.focus();
+  try {
+    const t = await navigator.clipboard.readText();
+    if (!t) throw new Error('vacío');
+    inp.value = t; recompute(); $('paste-hint').hidden = true; return;
+  } catch (_) {}
+  try {
+    inp.select();
+    if (document.execCommand('paste') && inp.value.trim()) { recompute(); $('paste-hint').hidden = true; return; }
+  } catch (_) {}
+  inp.select(); $('paste-hint').hidden = false;
+});
+// Ctrl+V en cualquier parte de la página rellena el cuadro de texto original
+document.addEventListener('paste', (e) => {
+  if (e.target === inp) return;
+  const t = e.clipboardData && e.clipboardData.getData('text');
+  if (!t) return;
+  e.preventDefault(); inp.value = t; recompute(); $('paste-hint').hidden = true;
+});
+$('btn-ex').addEventListener('click', () => { inp.value = EXAMPLE; recompute(); });
+$('btn-clear').addEventListener('click', () => { inp.value = ''; recompute(); inp.focus(); });
+$('btn-copy').addEventListener('click', async () => {
+  const btn = $('btn-copy');
+  const done = (m) => { btn.textContent = m; setTimeout(() => btn.textContent = 'Copiar resultado', 1800); };
+  if (!result) return;
+  try { await navigator.clipboard.writeText(result); done('Copiado'); }
+  catch (_) {
+    const r = document.createRange(); r.selectNodeContents(out);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+    done(ok ? 'Copiado' : 'Texto seleccionado: Ctrl+C');
+  }
+});
+
+recompute();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
