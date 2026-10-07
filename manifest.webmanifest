@@ -1,0 +1,15 @@
+{
+  "name": "Analítica sin referencias",
+  "short_name": "Sin referencias",
+  "description": "Elimina los valores de referencia de una analítica y comprueba que los valores numéricos no cambian.",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f6",
+  "theme_color": "#0b6e7f",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
