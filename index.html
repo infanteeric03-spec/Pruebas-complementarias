@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0b6e7f">
-<meta name="build" content="20261007230005">
+<meta name="build" content="20261112190211">
 <meta name="description" content="Elimina los valores de referencia de una analítica y comprueba que los valores numéricos no cambian.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -151,7 +151,7 @@ function mk(W){
   const RANGE = `[-−]?${NUM}${SEP}${NUM}`;
   const CMP = `(?:<=|>=|=<|=>|<|>|≤|≥|menor(?:es)?${W}+(?:de|que)|mayor(?:es)?${W}+(?:de|que)|inferior${W}+a|superior${W}+a|hasta|m[aá]x\\.?|m[ií]n\\.?)${W}*${NUM}`;
   const REF = `(?:${RANGE}|${CMP})`;
-  const UNIT = `(?:(?:\\/[A-Za-zµμ]{1,6}|[A-Za-zµμ]{1,6}(?:\\/[\\wµμ.³]+(?:,\\d+[A-Za-z0-9]*)?)+|%|(?:x${W}?)?10(?:\\^|\\*\\*)?[0-9³⁶⁹]+(?:\\/[\\wµμ]+)?|(?:fL|pg|mg|g|µg|ug|ng|mm|seg|UI|IU|mEq|mmol|mL|dL|L|kg|mmHg|U|s))(?![\\wµμ]))`;
+  const UNIT = `(?:(?:\\/[A-Za-zµμ]{1,6}|[A-Za-zµμ]{1,6}(?:\\/[\\wµμ.³]+(?:,\\d+[A-Za-z0-9]*)?)+(?:${W}?m\\^2)?|%|(?:x${W}?)?10(?:\\^|\\*\\*)?[0-9³⁶⁹]+(?:\\/[\\wµμ]+)?|(?:fL|pg|mg|g|µg|ug|ng|mm|seg|UI|IU|mEq|mmol|mL|dL|L|kg|mmHg|U|s))(?![\\wµμ]))`;
   const SEXL = `(?:hombres?|mujeres?|varones?|ni[ñn]os?|ni[ñn]as?|adultos?|adultas?|embarazadas?|masc(?:ulino)?\\.?|fem(?:enino)?\\.?|[HMVF])`;
   const REFL = `(?:valores?${W}+(?:de${W}+)?referencia|valores?${W}+normales?|valor${W}+normal|rango(?:${W}+(?:de${W}+referencia|normal))?|intervalo(?:${W}+de${W}+referencia)?|referencia|ref\\.?|v\\.?${W}?[rn]\\.?|normal(?:es)?)`;
   const ITEM = `(?:${SEXL}${W}*[:=]?${W}*)?${REF}(?:${W}*${UNIT})?`;
@@ -184,8 +184,8 @@ const COMMENT_RES = COMMENTS.map(c => new RegExp(
     .map(t => t === '>=' ? '(?:>=|≥)' : t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([<>])/g, '\\s*$1\\s*'))
     .join('\\s*(?:\\s)\\s*') + '\\.?', 'gi'));
 
-const ROW_SCOPES = ['Hemograma', 'Gasometría', 'Gasometría venosa', 'Gasometría arterial'];
-const ROW_DROP = /^(?:C\.?\s?H\.?\s?C\.?\s?M|V\.?\s?C\.?\s?M|H\.?\s?C\.?\s?M|R\.?\s?D\.?\s?W(?:\s*\(C\.?\s?V\.?\))?|Hematocrito|Hto|Hemat[ií]es)\.?$/i;
+const ROW_SCOPES = ['Hemograma', 'Gasometría', 'Gasometría venosa', 'Gasometría arterial', 'Coagulación'];
+const ROW_DROP = /^(?:C\.?\s?H\.?\s?C\.?\s?M|V\.?\s?C\.?\s?M|H\.?\s?C\.?\s?M|V\.?\s?P\.?\s?M|R\.?\s?D\.?\s?W(?:\s*\(C\.?\s?V\.?\))?|Hematocrito|Hto|Hemat[ií]es)\.?$/i;
 
 function analyze(text, opts = {}){
   const S = mk('\\s'), H = mk('[ \\t]');
@@ -206,6 +206,27 @@ function analyze(text, opts = {}){
   add(/\(\s*\)/g, 'empty');
   for (const cre of COMMENT_RES) { cre.lastIndex = 0; add(cre, 'comment'); }
   add(/(?<![\wÀ-ÿ])negativo(?![\wÀ-ÿ])/gi, 'sub', 0, undefined, {replacement: '-'});
+  add(/(?<![\wÀ-ÿ])Filtrado[ \t]+glomerular[ \t]+estimado[ \t]*\([ \t]*Ecuaci[oó]n[ \t]+CKD-EPI[ \t]*\)/gi, 'sub', 0, undefined, {replacement: 'FR'});
+  // Nota de interpretación de coagulación: se quita del sitio y se añade al final del bloque de coagulación
+  {
+    const noteRe = /\[\s*TROMBOSIS\s+Y\s+HEMOSTASIA\s*\*?\s*\][ \t]*(Interpretaci[oó]n[^\n]*?)[ \t]*(?:\([ \t]*\))?[ \t]*(?=\n|$|[ \t]\/[ \t]*\[)/gi;
+    const notes = [...text.matchAll(noteRe)].map(m => ({start: m.index, end: m.index + m[0].length, txt: m[1]}));
+    const real = found.filter(x => x.kind === 'section' && !notes.some(n => x.start >= n.start && x.start < n.end)).sort((a, b) => a.start - b.start);
+    notes.forEach((n, k) => {
+      const coag = real.filter(x => x.header === 'Coagulación');
+      const tgt = coag.find(x => x.start >= n.end) || coag[coag.length - 1];
+      if (!tgt) return;
+      const nx = real.find(y => y.start >= tgt.end);
+      let p = nx ? nx.start : text.length;
+      for (;;) {
+        while (p > tgt.end && /\s/.test(text[p - 1])) p--;
+        const cover = notes.find(q => q.start < p && q.end >= p);
+        if (cover && p > tgt.end) p = cover.start; else break;
+      }
+      found.push({start: n.start, end: n.end, kind: 'note', nid: k});
+      found.push({start: p, end: p, kind: 'ins', nid: k, insert: n.txt});
+    });
+  }
   // Filas de tabla «Etiqueta valor [unidad] [rango]»: se quita el rango y, en la sección de hemograma, las filas en % y las indicadas
   {
     const secs = found.filter(x => x.kind === 'section').sort((a, b) => a.start - b.start);
@@ -232,6 +253,38 @@ function analyze(text, opts = {}){
   const free = (x) => acc.every(y => x.end <= y.start || x.start >= y.end);
   for (const x of certain) if (free(x)) acc.push(x);
   for (const x of dubious) if (free(x)) acc.push(x);
+  // Items «Etiqueta valor [unidad] (ref)» separados por comas: se quitan los expresados en % y los indicados
+  {
+    const secs = acc.filter(x => x.kind === 'section');
+    const scopes = secs.filter(x => ROW_SCOPES.includes(x.header)).map(x => { const nx = secs.find(y => y.start >= x.end); return [x.end, nx ? nx.start : text.length]; });
+    const itemRe = /(?:[^\n,]|,(?!\s))+/g;
+    const labRe = /^([^\d]*?[A-Za-zÀ-ÿ][^\d]*?)[ \t]+\*?\d+(?:[.,]\d+)?\*?[ \t]*(%)?/;
+    for (const [a, b] of scopes) {
+      const items = [];
+      let m; itemRe.lastIndex = a;
+      while ((m = itemRe.exec(text)) && m.index < b) {
+        let is = m.index, ie = Math.min(b, m.index + m[0].length);
+        const seg = text.slice(is, ie);
+        is += seg.length - seg.trimStart().length; ie -= seg.length - seg.trimEnd().length;
+        if (ie <= is) continue;
+        const lm = text.slice(is, ie).match(labRe);
+        const drop = !!lm && !acc.some(x => x.kind === 'row' && x.start < ie && x.end > is) && (lm[2] === '%' || ROW_DROP.test(lm[1].trim().replace(/[ \t]*#$/, '')));
+        const sep = (text.slice(ie).match(/^,[ \t]*/) || [''])[0].length;
+        items.push({is, ie, drop, sep});
+      }
+      for (let i = 0; i < items.length;) {
+        if (!items[i].drop) { i++; continue; }
+        let j = i;
+        while (j + 1 < items.length && items[j].sep > 0 && items[j + 1].drop && items[j + 1].is === items[j].ie + items[j].sep) j++;
+        const pv = items[i - 1];
+        const linked = i > 0 && !pv.drop && pv.sep > 0 && items[i].is === pv.ie + pv.sep;
+        const s0 = linked ? pv.ie : items[i].is, e0 = linked ? items[j].ie : items[j].ie + items[j].sep;
+        for (let k = acc.length - 1; k >= 0; k--) if (acc[k].start >= s0 && acc[k].end <= e0) acc.splice(k, 1);
+        if (free({start: s0, end: e0})) acc.push({start: s0, end: e0, kind: 'row'});
+        i = j + 1;
+      }
+    }
+  }
   // Texto sin saltos de línea: quita «etiqueta valor %» con su rango en las secciones indicadas
   {
     const secs = acc.filter(x => x.kind === 'section');
@@ -296,6 +349,12 @@ function buildFull(text, spans, opts = {}){
     if (!sp.on) continue;
     let s = sp.start, e = sp.end;
     nl += (text.slice(s, e).match(/\n/g) || []).length;
+    if (sp.kind === 'ins') {
+      if (!spans.some(x => x.kind === 'note' && x.nid === sp.nid && x.on)) continue;
+      out += text.slice(pos, s) + (opts.join ? ', ' : '\n') + sp.insert; pos = s;
+      if (!opts.join) nl--;
+      continue;
+    }
     if (sp.kind === 'star') { out += text.slice(pos, s); pos = e; continue; }
     if (sp.kind === 'sub') {
       let c = '';
@@ -324,7 +383,7 @@ function buildFull(text, spans, opts = {}){
     if (['row', 'label', 'loose'].includes(sp.kind)) { const pm = text.slice(e).match(/^[ \t]+(?=[.;,])/); if (pm) e += pm[0].length; }
     if (s === 0 || text[s-1] === '\n') {
       while (e < text.length && (text[e] === ' ' || text[e] === '\t')) e++;
-      if (sp.kind === 'section' || sp.kind === 'sample' || sp.kind === 'row' || sp.kind === 'comment' || sp.kind === 'refline') {
+      if (['section', 'sample', 'row', 'comment', 'refline', 'note'].includes(sp.kind)) {
         if (text[e] === '\r' && text[e+1] === '\n') { e += 2; nl++; }
         else if (text[e] === '\n') { e++; nl++; }
       }
@@ -360,7 +419,8 @@ const numsOf = (s) => s.match(new RegExp(NUM, 'g')) || [];
 function verify(text, spans, out, opts = {}){
   const on = spans.filter(s => s.on);
   let blanked = '', pos = 0, removedText = '', unitText = '', rowText = '';
-  for (const sp of on) { blanked += text.slice(pos, sp.start) + '\u0001'; if (sp.kind === 'unit') unitText += sp.text + ' '; else if (sp.kind === 'row') rowText += sp.text + ' '; else removedText += sp.text + ' '; pos = sp.end; }
+  const insOn = (sp) => spans.some(x => x.kind === 'note' && x.nid === sp.nid && x.on);
+  for (const sp of on) { if (sp.kind === 'note') { blanked += text.slice(pos, sp.start); pos = sp.end; continue; } if (sp.kind === 'ins') { if (insOn(sp)) blanked += text.slice(pos, sp.start) + sp.insert; else blanked += text.slice(pos, sp.start); pos = sp.end; continue; } blanked += text.slice(pos, sp.start) + '\u0001'; if (sp.kind === 'unit') unitText += sp.text + ' '; else if (sp.kind === 'row') rowText += sp.text + ' '; else removedText += sp.text + ' '; pos = sp.end; }
   blanked += text.slice(pos);
   const all = numsOf(text), kept = numsOf(blanked), got = numsOf(out), removed = numsOf(removedText), unitNums = numsOf(unitText), rowNums = numsOf(rowText);
   const checks = [];
@@ -378,7 +438,7 @@ function verify(text, spans, out, opts = {}){
     detail: firstDiff === -1 ? `${got.length} valores idénticos al original, en el mismo orden.` : `Primera diferencia en la posición ${firstDiff + 1}.`
   });
   const strip = (s) => s.replace(/\s+/g, '');
-  const noSpans = (() => { let r = '', p = 0; for (const sp of on) { r += text.slice(p, sp.start) + (bf.inplace && sp.kind === 'section' ? '- ' + sp.header + ': ' : sp.kind === 'sub' ? sp.replacement : ''); p = sp.end; } return r + text.slice(p); })();
+  const noSpans = (() => { let r = '', p = 0; for (const sp of on) { r += text.slice(p, sp.start) + (bf.inplace && sp.kind === 'section' ? '- ' + sp.header + ': ' : sp.kind === 'sub' ? sp.replacement : sp.kind === 'ins' && insOn(sp) ? sp.insert : ''); p = sp.end; } return r + text.slice(p); })();
   checks.push({
     ok: (opts.join ? (t) => strip(t).replace(/,/g, '') : strip)(bf.prefix + noSpans) === (opts.join ? (t) => strip(t).replace(/,/g, '') : strip)(bf.raw),
     label: 'Resto del texto idéntico',
@@ -412,7 +472,7 @@ function verify(text, spans, out, opts = {}){
   if (left.length) warns.push(`Posibles rangos que siguen en el resultado: ${[...new Set(left)].join(' · ')}`);
   if (labels.length) warns.push(`Etiquetas de referencia que siguen en el resultado: ${[...new Set(labels)].join(' · ')}`);
   if (maybe) warns.push(`${maybe} rango${maybe > 1 ? 's' : ''} dudoso${maybe > 1 ? 's' : ''} sin eliminar (ver revisión de cambios).`);
-  return {checks, warns, counts: {removed: on.filter(x => !['section', 'sample', 'unit', 'row', 'star', 'hash', 'empty', 'sub', 'comment'].includes(x.kind)).length, rows: on.filter(x => x.kind === 'row').length, subs: on.filter(x => x.kind === 'sub').length, units: on.filter(x => x.kind === 'unit').length, kept: got.length, all: all.length}, removedNums: removed, rowsList: on.filter(x => x.kind === 'row').map(x => x.text.replace(/\s+/g, ' ')), unitsList: [...new Set(on.filter(x => x.kind === 'unit').map(x => x.text))]};
+  return {checks, warns, counts: {removed: on.filter(x => !['section', 'sample', 'unit', 'row', 'star', 'hash', 'empty', 'sub', 'comment', 'note', 'ins'].includes(x.kind)).length, rows: on.filter(x => x.kind === 'row').length, subs: on.filter(x => x.kind === 'sub').length, units: on.filter(x => x.kind === 'unit').length, kept: got.length, all: all.length}, removedNums: removed, rowsList: on.filter(x => x.kind === 'row').map(x => x.text.replace(/\s+/g, ' ')), unitsList: [...new Set(on.filter(x => x.kind === 'unit').map(x => x.text))]};
 }
 // ==CORE END
 
@@ -446,6 +506,7 @@ function render(){
     (v.unitsList.length ? `<li><span class="tag ok" style="visibility:hidden">OK</span><span class="detail">Unidades eliminadas: <code>${esc(v.unitsList.join('  '))}</code></span></li>` : '');
   let h = '', pos = 0;
   spans.forEach((sp, i) => {
+    if (sp.kind === 'ins') return;
     h += esc(text.slice(pos, sp.start));
     h += `<button type="button" class="seg ${sp.on ? (sp.kind === 'section' || sp.kind === 'sub' ? 'sec' : 'on') : 'maybe'}" data-i="${i}" title="${sp.kind === 'sub' ? 'Se sustituye por «' + sp.replacement + '». ' + (sp.on ? 'Pulsa para conservar' : 'Pulsa para sustituir') : sp.kind === 'section' ? (sp.on ? 'Se sustituye por «- ' + sp.header + ':». Pulsa para conservar la etiqueta' : 'Pulsa para sustituir por «- ' + sp.header + ':»') : sp.on ? 'Conservar' : 'Eliminar'}">${esc(sp.text)}</button>`;
     pos = sp.end;
@@ -504,7 +565,6 @@ $('btn-copy').addEventListener('click', async () => {
 
 recompute();
 </script>
-
 <script>
 // Actualización automática: busca una versión nueva al abrir, al volver a la ventana y cada 30 minutos.
 (function () {
