@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0b6e7f">
-<meta name="build" content="20261112190211">
+<meta name="build" content="20261112191021">
 <meta name="description" content="Elimina los valores de referencia de una analítica y comprueba que los valores numéricos no cambian.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -206,10 +206,10 @@ function analyze(text, opts = {}){
   add(/\(\s*\)/g, 'empty');
   for (const cre of COMMENT_RES) { cre.lastIndex = 0; add(cre, 'comment'); }
   add(/(?<![\wÀ-ÿ])negativo(?![\wÀ-ÿ])/gi, 'sub', 0, undefined, {replacement: '-'});
-  add(/(?<![\wÀ-ÿ])Filtrado[ \t]+glomerular[ \t]+estimado[ \t]*\([ \t]*Ecuaci[oó]n[ \t]+CKD-EPI[ \t]*\)/gi, 'sub', 0, undefined, {replacement: 'FR'});
+  add(/(?<![\wÀ-ÿ])Filtrado[ \t]+glomerular[ \t]+estimado[ \t]*\([ \t]*Ecuaci[oó]n[ \t]+CKD-EPI[ \t]*\)/gi, 'sub', 0, undefined, {replacement: 'FG'});
   // Nota de interpretación de coagulación: se quita del sitio y se añade al final del bloque de coagulación
   {
-    const noteRe = /\[\s*TROMBOSIS\s+Y\s+HEMOSTASIA\s*\*?\s*\][ \t]*(Interpretaci[oó]n[^\n]*?)[ \t]*(?:\([ \t]*\))?[ \t]*(?=\n|$|[ \t]\/[ \t]*\[)/gi;
+    const noteRe = /\[\s*TROMBOSIS\s+Y\s+HEMOSTASIA\s*\*?\s*\][ \t]*Interpretaci[oó]n(?:[ \t]+Coagulaci[oó]n)?[ \t]*:?[ \t]*([^\n]+?)[ \t]*(?:\([ \t]*\))?[ \t]*(?=\n|$|[ \t]\/[ \t]*\[)/gi;
     const notes = [...text.matchAll(noteRe)].map(m => ({start: m.index, end: m.index + m[0].length, txt: m[1]}));
     const real = found.filter(x => x.kind === 'section' && !notes.some(n => x.start >= n.start && x.start < n.end)).sort((a, b) => a.start - b.start);
     notes.forEach((n, k) => {
